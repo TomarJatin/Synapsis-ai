@@ -100,7 +100,9 @@ export class GitHubService {
         repo,
         tree_sha: treeSha,
         recursive: 'true',
-      })
+      });
+
+      console.log("getRepositoryTree...",  data)
 
       return data.tree as GitHubTree[]
     } catch (error) {

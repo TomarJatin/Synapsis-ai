@@ -1,33 +1,35 @@
 import { Injectable } from '@nestjs/common'
-import { OpenAI } from 'openai'
-import Anthropic from '@anthropic-ai/sdk'
+import { generateObject, generateText, zodSchema } from 'ai'
+import { createOpenAI } from '@ai-sdk/openai'
+import { createAnthropic } from '@ai-sdk/anthropic'
 import config from 'src/config'
-import { safeParseJson } from 'src/common/utils/parse'
 import { LLMRequest, RetryOptions } from './types/llm'
-import { ChatCompletionMessageParam } from 'openai/resources/chat'
-import { MessageParam } from '@anthropic-ai/sdk/resources/messages'
+import { z } from 'zod'
 
 @Injectable()
 export class LLMService {
-  private readonly openai: OpenAI
-  private readonly openai_gemini: OpenAI
-  private readonly openai_perplexity: OpenAI
-  private readonly anthropic: Anthropic
+  private readonly openaiProvider
+  private readonly anthropicProvider
+  private readonly geminiProvider
+  private readonly perplexityProvider
 
   constructor() {
-    this.openai = new OpenAI({
+    this.openaiProvider = createOpenAI({
       apiKey: config().keys.llm.openai.apiKey,
     })
-    this.openai_gemini = new OpenAI({
+    
+    this.anthropicProvider = createAnthropic({
+      apiKey: config().keys.llm.anthropic.apiKey,
+    })
+    
+    this.geminiProvider = createOpenAI({
       apiKey: config().keys.llm.gemini.apiKey,
       baseURL: config().keys.llm.gemini.baseURL,
     })
-    this.openai_perplexity = new OpenAI({
+    
+    this.perplexityProvider = createOpenAI({
       apiKey: config().keys.llm.perplexity.apiKey,
       baseURL: config().keys.llm.perplexity.baseURL,
-    })
-    this.anthropic = new Anthropic({
-      apiKey: config().keys.llm.anthropic.apiKey,
     })
   }
 
@@ -55,41 +57,17 @@ export class LLMService {
     throw new Error('Failed to complete operation')
   }
 
-  public getModel(model: 'openai' | 'gemini' | 'perplexity' | 'anthropic') {
-    if (model === 'openai') {
-      return this.openai
-    }
-    if (model === 'gemini') {
-      return this.openai_gemini
-    }
-    if (model === 'perplexity') {
-      console.log('perplexity')
-      return this.openai_perplexity
-    }
+  private getModelInstance(model: 'openai' | 'gemini' | 'perplexity' | 'anthropic', modelName: string) {
     if (model === 'anthropic') {
-      return this.anthropic
+      return this.anthropicProvider(modelName)
+    } else if (model === 'openai') {
+      return this.openaiProvider(modelName)
+    } else if (model === 'gemini') {
+      return this.geminiProvider(modelName)
+    } else if (model === 'perplexity') {
+      return this.perplexityProvider(modelName)
     }
     throw new Error('Invalid model')
-  }
-
-  // Convert OpenAI format messages to Anthropic format
-  private convertToAnthropicMessages(messages: ChatCompletionMessageParam[]): MessageParam[] {
-    return messages.map((msg) => {
-      if (msg.role === 'system') {
-        // Anthropic handles system messages differently, we'll prepend to first user message
-        return null
-      }
-      return {
-        role: msg.role === 'assistant' ? 'assistant' : 'user',
-        content: typeof msg.content === 'string' ? msg.content : JSON.stringify(msg.content),
-      } as MessageParam
-    }).filter(Boolean) as MessageParam[]
-  }
-
-  // Extract system message from OpenAI format
-  private extractSystemMessage(messages: ChatCompletionMessageParam[]): string | undefined {
-    const systemMessage = messages.find(msg => msg.role === 'system')
-    return systemMessage ? (typeof systemMessage.content === 'string' ? systemMessage.content : JSON.stringify(systemMessage.content)) : undefined
   }
 
   public async generate<T extends string | object>({
@@ -97,58 +75,61 @@ export class LLMService {
     responseFormat = 'string',
     modelConfig,
     options,
-  }: LLMRequest) {
-    if (modelConfig.model === 'anthropic') {
-      const anthropicMessages = this.convertToAnthropicMessages(messages as ChatCompletionMessageParam[])
-      const systemMessage = this.extractSystemMessage(messages as ChatCompletionMessageParam[])
-      
-      const response = await this.retryOperation(
-        async () => {
-          return await this.anthropic.messages.create({
-            model: modelConfig.name,
-            max_tokens: 8192,
-            system: systemMessage,
-            messages: anthropicMessages,
-          })
-        },
-        {
-          delayMs: 1000,
-          maxAttempts: 3,
-          strategy: 'fixed',
-        },
-      )
+    schema,
+  }: LLMRequest & { schema?: z.ZodSchema<any> }) {
+    const model = this.getModelInstance(modelConfig.model, modelConfig.name)
 
-      const content = response.content[0]?.type === 'text' ? response.content[0].text : ''
-      
-      if (responseFormat === 'json') {
-        const parsedContent = safeParseJson(content)
-        return parsedContent as T
-      }
-      return content as T
-    } else {
-      // Handle OpenAI-compatible models
-      const model = this.getModel(modelConfig.model)
-      const response = await this.retryOperation(
-        async () => {
-          return await (model as OpenAI).chat.completions.create({
-            model: modelConfig.name,
-            messages: messages as ChatCompletionMessageParam[],
-            response_format: responseFormat === 'json' ? { type: 'json_object' } : undefined,
+    // Convert messages to CoreMessage format
+    const convertedMessages = messages.map(msg => ({
+      role: msg.role,
+      content: msg.content,
+    }))
+
+    return await this.retryOperation(
+      async () => {
+        if (responseFormat === 'json' && schema) {
+          const result = await generateObject({
+            model,
+            messages: convertedMessages,
+            schema: zodSchema(schema),
+            mode: 'tool',
             ...options,
           })
-        },
-        {
-          delayMs: 1000,
-          maxAttempts: 3,
-          strategy: 'fixed',
-        },
-      )
-      if (responseFormat === 'json') {
-        const exactResponse = response.choices[0].message.content ?? '{}'
-        const parsedContent = safeParseJson(exactResponse)
-        return parsedContent as T
-      }
-      return response?.choices[0]?.message?.content as T
-    }
+          return result.object as T
+        } else {
+          const result = await generateText({
+            model,
+            messages: convertedMessages,
+            ...options,
+          })
+          return result.text as T
+        }
+      },
+      {
+        delayMs: 1000,
+        maxAttempts: 3,
+        strategy: 'fixed',
+      },
+    )
+  }
+
+  // Helper method for streaming text generation (will be used for SSE)
+  public async generateStream({
+    messages,
+    modelConfig,
+    options,
+  }: Omit<LLMRequest, 'responseFormat'>) {
+    const model = this.getModelInstance(modelConfig.model, modelConfig.name)
+
+    const convertedMessages = messages.map(msg => ({
+      role: msg.role,
+      content: msg.content,
+    }))
+
+    return generateText({
+      model,
+      messages: convertedMessages,
+      ...options,
+    })
   }
 }

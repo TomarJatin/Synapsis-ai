@@ -1,6 +1,4 @@
-import { ChatCompletionMessageParam } from 'openai/resources/chat'
-import { ChatCompletionCreateParamsNonStreaming } from 'openai/resources/chat'
-import { MessageParam } from '@anthropic-ai/sdk/resources/messages'
+import { CoreMessage } from 'ai'
 
 export type LLMModel = 'gemini' | 'anthropic'
 
@@ -20,9 +18,14 @@ export type LLMModelConfig =
       name: string
     }
 
+export type LLMMessage = {
+  role: 'system' | 'user' | 'assistant'
+  content: string
+}
+
 export type LLMRequest = {
-  messages: ChatCompletionMessageParam[] | MessageParam[]
+  messages: LLMMessage[]
   responseFormat?: 'string' | 'json'
   modelConfig: LLMModelConfig
-  options?: Partial<ChatCompletionCreateParamsNonStreaming>
+  options?: Record<string, any>
 }

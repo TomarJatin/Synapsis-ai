@@ -3,6 +3,7 @@ import { PrismaService } from 'src/prisma/prisma.service'
 import { LLMService } from 'src/llm/llm.service'
 import { GitHubService, GitHubRepository, GitHubTree } from 'src/github/github.service'
 import { AnalysisStatus } from '@prisma/client'
+import { z } from 'zod'
 
 export interface RepositoryFeature {
   name: string
@@ -42,6 +43,41 @@ export interface TechStack {
   languages: string[]
 }
 
+// Zod schemas for structured LLM outputs
+const RepositoryFeatureSchema = z.object({
+  name: z.string(),
+  description: z.string(),
+  files: z.array(z.string()),
+  type: z.enum(['authentication', 'api', 'database', 'ui', 'testing', 'deployment', 'other']),
+  implementation: z.string(),
+  dependencies: z.array(z.string()),
+})
+
+const RepositoryFeaturesSchema = z.object({
+  features: z.array(RepositoryFeatureSchema)
+})
+
+const RepositoryStructureSchema = z.object({
+  architecture: z.string(),
+  patterns: z.array(z.string()),
+  directories: z.array(z.object({
+    path: z.string(),
+    purpose: z.string(),
+    importance: z.number(),
+  })),
+  entryPoints: z.array(z.string()),
+  configFiles: z.array(z.string()),
+})
+
+const TechStackSchema = z.object({
+  frontend: z.array(z.string()).optional(),
+  backend: z.array(z.string()).optional(),
+  database: z.array(z.string()).optional(),
+  tools: z.array(z.string()).optional(),
+  frameworks: z.array(z.string()).optional(),
+  languages: z.array(z.string()),
+})
+
 @Injectable()
 export class AnalysisService {
   private readonly logger = new Logger(AnalysisService.name)
@@ -51,6 +87,212 @@ export class AnalysisService {
     private readonly llmService: LLMService,
     private readonly githubService: GitHubService,
   ) {}
+
+  /**
+   * Analyze a repository with streaming updates
+   */
+  async analyzeRepositoryWithStreaming(
+    repositoryId: string, 
+    streamCallback: (event: string, data: any) => void
+  ): Promise<void> {
+    const repository = await this.prisma.repository.findUnique({
+      where: { id: repositoryId },
+    })
+
+    if (!repository) {
+      throw new Error('Repository not found')
+    }
+
+    // Create analysis record
+    const analysis = await this.prisma.analysis.create({
+      data: {
+        repositoryId,
+        status: AnalysisStatus.IN_PROGRESS,
+      },
+    })
+
+    try {
+      this.logger.log(`Starting streaming analysis for repository: ${repository.fullName}`)
+      streamCallback('status', { 
+        status: 'IN_PROGRESS', 
+        message: 'Fetching repository structure...',
+        step: 1,
+        totalSteps: 7
+      })
+
+      // Get repository tree and important files
+      const [owner, repoName] = repository.fullName.split('/')
+      const tree = await this.githubService.getRepositoryTree(owner, repoName)
+      
+      streamCallback('status', { 
+        status: 'IN_PROGRESS', 
+        message: 'Analyzing important files...',
+        step: 2,
+        totalSteps: 7
+      })
+      
+      // Filter and prioritize important files
+      const importantFiles = this.getImportantFiles(tree);
+      console.log("importantFiles length...",  importantFiles.length)
+      
+      streamCallback('status', { 
+        status: 'IN_PROGRESS', 
+        message: `Fetching content from ${importantFiles.length} important files...`,
+        step: 3,
+        totalSteps: 7
+      })
+      
+      // Get file contents
+      const fileContents = await this.githubService.getMultipleFilesContent(
+        owner, 
+        repoName, 
+        importantFiles.slice(0, 50) // Limit to avoid API rate limits
+      )
+
+      // Get README content
+      const readmeContent = await this.githubService.getReadmeContent(owner, repoName)
+      
+      // Get repository stats
+      const stats = await this.githubService.getRepositoryStats(owner, repoName)
+
+      streamCallback('status', { 
+        status: 'IN_PROGRESS', 
+        message: 'Extracting features with AI...',
+        step: 4,
+        totalSteps: 7
+      })
+
+      // Analyze with LLM - Features
+      let features: RepositoryFeature[] = []
+      try {
+        features = await this.extractFeatures(fileContents, readmeContent)
+        streamCallback('progress', { 
+          type: 'features',
+          data: features,
+          message: `Identified ${features.length} features`
+        })
+      } catch (error) {
+        console.error('Feature extraction error:', error)
+        streamCallback('progress', { 
+          type: 'features',
+          data: features,
+          message: 'Feature extraction skipped due to error'
+        })
+      }
+
+      streamCallback('status', { 
+        status: 'IN_PROGRESS', 
+        message: 'Analyzing repository structure...',
+        step: 5,
+        totalSteps: 7
+      })
+
+      // Analyze structure
+      let structure: RepositoryStructure = {
+        architecture: 'unknown',
+        patterns: [],
+        directories: [],
+        entryPoints: [],
+        configFiles: []
+      }
+      try {
+        structure = await this.analyzeStructure(tree, fileContents)
+        streamCallback('progress', { 
+          type: 'structure',
+          data: structure,
+          message: `Architecture: ${structure.architecture}`
+        })
+      } catch (error) {
+        console.error('Structure analysis error:', error)
+        streamCallback('progress', { 
+          type: 'structure',
+          data: structure,
+          message: 'Structure analysis skipped due to error'
+        })
+      }
+
+      streamCallback('status', { 
+        status: 'IN_PROGRESS', 
+        message: 'Extracting technology stack...',
+        step: 6,
+        totalSteps: 7
+      })
+
+      // Extract tech stack
+      let techStack: TechStack = { languages: [] }
+      try {
+        techStack = await this.extractTechStack(fileContents, stats.languages)
+        streamCallback('progress', { 
+          type: 'techStack',
+          data: techStack,
+          message: `Languages: ${techStack.languages.join(', ')}`
+        })
+      } catch (error) {
+        console.error('Tech stack analysis error:', error)
+        streamCallback('progress', { 
+          type: 'techStack',
+          data: techStack,
+          message: 'Tech stack analysis skipped due to error'
+        })
+      }
+
+      // Generate AST and calculate metrics
+      const [astData, codeMetrics] = await Promise.all([
+        this.generateAST(fileContents),
+        Promise.resolve(this.calculateCodeMetrics(fileContents, tree))
+      ])
+
+      streamCallback('status', { 
+        status: 'IN_PROGRESS', 
+        message: 'Generating summary...',
+        step: 7,
+        totalSteps: 7
+      })
+
+      // Generate summary
+      const summary = await this.generateSummary(features, structure, techStack, readmeContent)
+
+      // Update analysis with results
+      await this.prisma.analysis.update({
+        where: { id: analysis.id },
+        data: {
+          status: AnalysisStatus.COMPLETED,
+          completedAt: new Date(),
+          features: features as any,
+          structure: structure as any,
+          dependencies: stats.languages,
+          documentation: { readme: readmeContent },
+          codeMetrics: codeMetrics as any,
+          astData: astData as any,
+          searchableContent: this.createSearchableContent(features, structure, fileContents),
+          summary,
+          techStack: techStack as any,
+          complexity: codeMetrics.complexity,
+        },
+      })
+
+      // Update repository last analyzed timestamp
+      await this.prisma.repository.update({
+        where: { id: repositoryId },
+        data: { lastAnalyzed: new Date() },
+      })
+
+      this.logger.log(`Streaming analysis completed for repository: ${repository.fullName}`)
+    } catch (error) {
+      this.logger.error(`Streaming analysis failed for repository: ${repository.fullName}`, error)
+      
+      await this.prisma.analysis.update({
+        where: { id: analysis.id },
+        data: {
+          status: AnalysisStatus.FAILED,
+          completedAt: new Date(),
+          errorMessage: error.message,
+        },
+      })
+      
+      throw error
+    }
+  }
 
   /**
    * Analyze a repository and save results to database
@@ -80,7 +322,9 @@ export class AnalysisService {
       const tree = await this.githubService.getRepositoryTree(owner, repoName)
       
       // Filter and prioritize important files
-      const importantFiles = this.getImportantFiles(tree)
+      const importantFiles = this.getImportantFiles(tree);
+
+      console.log("importantFiles length...",  importantFiles.length)
       
       // Get file contents
       const fileContents = await this.githubService.getMultipleFilesContent(
@@ -267,9 +511,9 @@ For each feature, provide:
 - implementation: Brief technical description
 - dependencies: Related technologies/packages
 
-Return as JSON array of features.`
+Return as JSON object with features array.`
 
-    return await this.llmService.generate<RepositoryFeature[]>({
+    const result = await this.llmService.generate<{ features: RepositoryFeature[] }>({
       messages: [
         { role: 'system', content: 'You are an expert code analyst. Analyze repositories and extract features in JSON format.' },
         { role: 'user', content: prompt },
@@ -279,7 +523,10 @@ Return as JSON array of features.`
         model: 'anthropic',
         name: 'claude-3-5-sonnet-20241022',
       },
+      schema: RepositoryFeaturesSchema,
     })
+
+    return result.features
   }
 
   /**
@@ -323,6 +570,7 @@ Provide analysis in JSON format:
         model: 'anthropic',
         name: 'claude-3-5-sonnet-20241022',
       },
+      schema: RepositoryStructureSchema,
     })
   }
 
@@ -381,6 +629,7 @@ Extract and categorize technologies in JSON format:
         model: 'anthropic',
         name: 'claude-3-5-sonnet-20241022',
       },
+      schema: TechStackSchema,
     })
   }
 

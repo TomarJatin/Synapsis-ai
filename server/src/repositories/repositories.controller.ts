@@ -6,11 +6,14 @@ import {
   Query, 
   Body, 
   HttpException, 
-  HttpStatus 
+  HttpStatus,
+  Res,
+  MessageEvent
 } from '@nestjs/common'
 import { ApiTags, ApiOperation, ApiResponse, ApiQuery } from '@nestjs/swagger'
 import { RepositoriesService } from './repositories.service'
 import { Public } from 'src/auth/decorators/public.decorator'
+import { Response } from 'express'
 
 @ApiTags('repositories')
 @Controller('repositories')
@@ -73,6 +76,26 @@ export class RepositoriesController {
         `Failed to start analysis: ${error.message}`,
         HttpStatus.INTERNAL_SERVER_ERROR
       )
+    }
+  }
+
+  @Get(':id/analyze/stream')
+  @ApiOperation({ summary: 'Start repository analysis with streaming updates' })
+  @ApiResponse({ status: 200, description: 'Analysis started with real-time updates' })
+  async analyzeRepositoryStream(@Param('id') repositoryId: string, @Res() response: Response) {
+    try {
+      // Set SSE headers
+      response.setHeader('Content-Type', 'text/event-stream')
+      response.setHeader('Cache-Control', 'no-cache')
+      response.setHeader('Connection', 'keep-alive')
+      response.setHeader('Access-Control-Allow-Origin', '*')
+      response.setHeader('Access-Control-Allow-Headers', 'Cache-Control')
+
+      // Start analysis with streaming
+      await this.repositoriesService.startAnalysisWithStreaming(repositoryId, response)
+    } catch (error) {
+      response.write(`event: error\ndata: ${JSON.stringify({ error: error.message })}\n\n`)
+      response.end()
     }
   }
 

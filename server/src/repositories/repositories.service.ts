@@ -4,6 +4,7 @@ import { GitHubService, GitHubRepository } from 'src/github/github.service'
 import { AnalysisService } from 'src/analysis/analysis.service'
 import { AnalysisStatus } from '@prisma/client'
 import config from 'src/config'
+import { Response } from 'express'
 
 @Injectable()
 export class RepositoriesService {
@@ -142,6 +143,65 @@ export class RepositoriesService {
       message: 'Analysis started', 
       repositoryId,
       status: 'IN_PROGRESS' 
+    }
+  }
+
+  /**
+   * Start analysis with streaming updates via Server-Sent Events
+   */
+  async startAnalysisWithStreaming(repositoryId: string, response: Response) {
+    const repository = await this.prisma.repository.findUnique({
+      where: { id: repositoryId },
+    })
+
+    if (!repository) {
+      throw new NotFoundException('Repository not found')
+    }
+
+    this.logger.log(`Starting streaming analysis for repository: ${repository.fullName}`)
+
+    // Check if there's already an analysis in progress
+    const existingAnalysis = await this.prisma.analysis.findFirst({
+      where: {
+        repositoryId,
+        status: AnalysisStatus.IN_PROGRESS,
+      },
+    })
+
+    if (existingAnalysis) {
+      response.write(`event: error\ndata: ${JSON.stringify({ error: 'Analysis already in progress' })}\n\n`)
+      response.end()
+      return
+    }
+
+    // Send initial status
+    response.write(`event: status\ndata: ${JSON.stringify({ 
+      status: 'STARTING', 
+      message: 'Initializing repository analysis...',
+      repositoryId,
+      repositoryName: repository.fullName
+    })}\n\n`)
+
+    try {
+      // Start analysis with streaming callback
+      await this.analysisService.analyzeRepositoryWithStreaming(repositoryId, (event, data) => {
+        response.write(`event: ${event}\ndata: ${JSON.stringify(data)}\n\n`)
+      })
+
+      // Send completion status
+      response.write(`event: complete\ndata: ${JSON.stringify({ 
+        status: 'COMPLETED', 
+        message: 'Analysis completed successfully',
+        repositoryId
+      })}\n\n`)
+    } catch (error) {
+      this.logger.error(`Streaming analysis failed for repository ${repository.fullName}:`, error)
+      response.write(`event: error\ndata: ${JSON.stringify({ 
+        error: error.message,
+        repositoryId
+      })}\n\n`)
+    } finally {
+      response.end()
     }
   }
 
