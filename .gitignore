@@ -1,0 +1,185 @@
+# ===============================================
+# Root .gitignore for Synapsis-ai Project
+# Covers both server (NestJS) and web (Next.js)
+# ===============================================
+
+# ===============================================
+# Dependencies
+# ===============================================
+node_modules/
+.pnp
+.pnp.js
+.yarn/install-state.gz
+
+# ===============================================
+# Build outputs and compiled files
+# ===============================================
+# Server (NestJS)
+server/dist/
+server/build/
+
+# Web (Next.js)
+web/.next/
+web/out/
+web/build/
+
+# General build files
+*.tsbuildinfo
+
+# ===============================================
+# Environment Variables
+# ===============================================
+.env
+.env.local
+.env.development.local
+.env.test.local
+.env.production.local
+.env*.local
+
+# ===============================================
+# Logs
+# ===============================================
+logs/
+*.log
+npm-debug.log*
+pnpm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+lerna-debug.log*
+
+# ===============================================
+# Runtime data
+# ===============================================
+pids/
+*.pid
+*.seed
+*.pid.lock
+
+# ===============================================
+# Coverage and testing
+# ===============================================
+coverage/
+.nyc_output/
+.coverage/
+
+# ===============================================
+# Temporary files
+# ===============================================
+.temp/
+.tmp/
+*.tmp
+
+# ===============================================
+# OS generated files
+# ===============================================
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
+
+# ===============================================
+# IDEs and editors
+# ===============================================
+# VSCode
+.vscode/*
+!.vscode/settings.json
+!.vscode/tasks.json
+!.vscode/launch.json
+!.vscode/extensions.json
+
+# IntelliJ IDEA
+.idea/
+*.iws
+*.iml
+*.ipr
+
+# WebStorm
+.project
+.classpath
+.c9/
+*.launch
+.settings/
+*.sublime-workspace
+
+# ===============================================
+# Deployment and Production
+# ===============================================
+# Vercel
+.vercel
+
+# Docker
+.dockerignore
+
+# ===============================================
+# Database
+# ===============================================
+# SQLite databases
+*.sqlite
+*.sqlite3
+*.db
+
+# ===============================================
+# Certificates and keys
+# ===============================================
+*.pem
+*.key
+*.crt
+*.csr
+
+# ===============================================
+# Miscellaneous
+# ===============================================
+# Diagnostic reports
+report.[0-9]*.[0-9]*.[0-9]*.[0-9]*.json
+
+# TypeScript
+next-env.d.ts
+
+# Package manager lockfiles (keep one, ignore others)
+# Comment out the one you want to keep
+# package-lock.json
+# yarn.lock
+# pnpm-lock.yaml
+
+# ESLint cache
+.eslintcache
+
+# Prettier cache
+.prettierignore
+
+# Stylelint cache
+.stylelintcache
+
+# Optional npm cache directory
+.npm
+
+# Optional REPL history
+.node_repl_history
+
+# Microbundle cache
+.rpt2_cache/
+.rts2_cache_cjs/
+.rts2_cache_es/
+.rts2_cache_umd/
+
+# Optional REPL history
+.node_repl_history
+
+# Output of 'npm pack'
+*.tgz
+
+# Yarn Integrity file
+.yarn-integrity
+
+# Stores VSCode versions used for testing VSCode extensions
+.vscode-test
+
+# yarn v2
+.yarn/cache
+.yarn/unplugged
+.yarn/build-state.yml
+.yarn/install-state.gz
+.pnp.* 

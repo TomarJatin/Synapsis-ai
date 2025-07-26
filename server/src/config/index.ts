@@ -11,9 +11,16 @@ export default () => ({
   },
   keys: {
     apiKey: process.env.API_KEY!,
+    github: {
+      accessToken: process.env.GITHUB_ACCESS_TOKEN!,
+      organization: process.env.GITHUB_ORGANIZATION || '',
+    },
     llm: {
       openai: {
         apiKey: process.env.OPENAI_API_KEY!,
+      },
+      anthropic: {
+        apiKey: process.env.ANTHROPIC_API_KEY!,
       },
       gemini: {
         apiKey: process.env.GEMINI_API_KEY!,

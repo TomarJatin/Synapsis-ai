@@ -6,3 +6,69 @@ datasource db {
     provider = "mongodb"
     url      = env("DATABASE_URL")
 }
+
+model Repository {
+    id          String   @id @default(auto()) @map("_id") @db.ObjectId
+    githubId    Int      @unique
+    name        String
+    fullName    String   @unique // owner/repo format
+    owner       String
+    description String?
+    language    String?
+    stars       Int      @default(0)
+    forks       Int      @default(0)
+    isPrivate   Boolean  @default(false)
+    githubUrl   String
+    cloneUrl    String
+    defaultBranch String @default("main")
+    createdAt   DateTime @default(now())
+    updatedAt   DateTime @updatedAt
+    lastAnalyzed DateTime?
+    
+    // Relations
+    analyses    Analysis[]
+    
+    @@map("repositories")
+}
+
+model Analysis {
+    id           String   @id @default(auto()) @map("_id") @db.ObjectId
+    repositoryId String   @db.ObjectId
+    
+    // Analysis metadata
+    status       AnalysisStatus @default(PENDING)
+    startedAt    DateTime @default(now())
+    completedAt  DateTime?
+    errorMessage String?
+    
+    // Repository structure and features
+    features     Json?    // Array of identified features
+    structure    Json?    // Repository structure/architecture
+    dependencies Json?    // Package dependencies
+    documentation Json?   // README and docs analysis
+    codeMetrics  Json?    // Code quality metrics
+    
+    // AST and searchable data
+    astData      Json?    // Abstract Syntax Tree representation
+    searchableContent Json? // Processed content for search
+    
+    // Summary and insights
+    summary      String?  // Overall repository summary
+    techStack    Json?    // Technology stack used
+    complexity   String?  // Complexity assessment
+    
+    createdAt    DateTime @default(now())
+    updatedAt    DateTime @updatedAt
+    
+    // Relations
+    repository   Repository @relation(fields: [repositoryId], references: [id], onDelete: Cascade)
+    
+    @@map("analyses")
+}
+
+enum AnalysisStatus {
+    PENDING
+    IN_PROGRESS
+    COMPLETED
+    FAILED
+}
