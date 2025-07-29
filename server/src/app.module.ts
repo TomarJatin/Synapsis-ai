@@ -8,6 +8,7 @@ import { LLMModule } from './llm/llm.module'
 import { GitHubModule } from './github/github.module'
 import { AnalysisModule } from './analysis/analysis.module'
 import { RepositoriesModule } from './repositories/repositories.module'
+import { SearchModule } from './search/search.module'
 
 @Module({
   imports: [
@@ -21,6 +22,7 @@ import { RepositoriesModule } from './repositories/repositories.module'
     GitHubModule,
     AnalysisModule,
     RepositoriesModule,
+    SearchModule,
   ],
   controllers: [AppController],
   providers: [AppService],

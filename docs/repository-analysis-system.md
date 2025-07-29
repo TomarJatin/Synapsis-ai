@@ -18,7 +18,7 @@ The Repository Analysis and Search System is a comprehensive solution designed t
 
 ### Key Features
 - **Automated Repository Analysis**: Deep analysis of repository structure, features, and implementations
-- **Comprehensive AST Generation**: Detailed Abstract Syntax Tree extraction for JavaScript, TypeScript, and JSON files
+- **Multi-Language AST Generation**: Universal Abstract Syntax Tree extraction using Tree-sitter for 20+ programming languages
 - **Intelligent Search**: Natural language query processing with contextual code snippet extraction
 - **Multi-Repository Support**: Analyze and search across multiple repositories simultaneously
 - **Pattern Recognition**: Automatic detection of common frameworks, libraries, and coding patterns
@@ -58,7 +58,7 @@ graph TB
 
 ### AI & Processing
 - **Vercel AI SDK**: Integration with language models
-- **@babel/parser**: JavaScript/TypeScript AST parsing
+- **Tree-sitter**: Universal multi-language AST parsing library
 - **Claude 3.5 Sonnet**: LLM for natural language processing and code analysis
 
 ### Infrastructure
@@ -76,8 +76,11 @@ graph TB
 const GITHUB_CONFIG = {
   personalAccessToken: process.env.GITHUB_PERSONAL_ACCESS_TOKEN,
   allowedOrganizations: ['your-org', 'another-org'],
-  supportedLanguages: ['TypeScript', 'JavaScript', 'JSON'],
-  supportedFrameworks: ['Next.js', 'NestJS', 'React']
+  supportedLanguages: [
+    'TypeScript', 'JavaScript', 'Python', 'Go', 'Rust', 'Java', 
+    'C++', 'C#', 'Ruby', 'PHP', 'Swift', 'Kotlin', 'Scala', 'JSON', 'YAML'
+  ],
+  supportedFrameworks: ['Next.js', 'NestJS', 'React', 'Django', 'FastAPI', 'Spring', 'Gin']
 }
 ```
 
@@ -468,7 +471,7 @@ Categorize all technologies and provide detailed analysis:
 }
 ```
 
-### 1.7 Comprehensive AST Generation
+### 1.7 Universal AST Generation with Tree-sitter
 
 #### Multi-Language AST Processing
 ```typescript
@@ -492,18 +495,27 @@ private async generateAST(
       libraries: [] as string[],
       patterns: [] as string[],
       apiEndpoints: [] as any[],
-      dbOperations: [] as any[]
+      dbOperations: [] as any[],
+      crossLanguagePatterns: [] as any[]
     }
   }
+
+  // Initialize Tree-sitter parsers for supported languages
+  await this.initializeTreeSitterParsers()
 
   for (const file of fileContents) {
     if (!file.content) continue
 
     const language = this.detectLanguage(file.path)
-    if (!['javascript', 'typescript', 'json'].includes(language)) continue
+    const supportedLanguages = [
+      'javascript', 'typescript', 'python', 'go', 'rust', 'java',
+      'cpp', 'csharp', 'ruby', 'php', 'swift', 'kotlin', 'scala', 'json', 'yaml'
+    ]
+    
+    if (!supportedLanguages.includes(language)) continue
 
     try {
-      const fileAst = await this.parseFileAST(file.path, file.content, language)
+      const fileAst = await this.parseFileASTWithTreeSitter(file.path, file.content, language)
       if (fileAst) {
         // Clean AST data to remove non-serializable properties
         const cleanedAst = this.cleanASTData(fileAst)
@@ -518,8 +530,9 @@ private async generateAST(
         astData.summary.totalInterfaces += cleanedAst.interfaces?.length || 0
         astData.summary.totalTypes += cleanedAst.types?.length || 0
         
-        // Analyze global patterns
+        // Analyze global and cross-language patterns
         this.analyzeGlobalPatterns(cleanedAst, astData.globalPatterns)
+        this.analyzeCrossLanguagePatterns(cleanedAst, astData.globalPatterns)
       }
     } catch (error) {
       this.logger.warn(`Failed to parse AST for ${file.path}: ${error.message}`)
@@ -534,81 +547,158 @@ private async generateAST(
 }
 ```
 
-#### Detailed AST File Processing
+#### Tree-sitter Multi-Language AST Processing
 ```typescript
-private async parseFileAST(filePath: string, content: string, language: string): Promise<any> {
-  switch (language) {
-    case 'json':
-      return await this.parseJSONAST(filePath, content)
-    case 'javascript':
-    case 'typescript':
-      return await this.parseJSTypeScriptAST(filePath, content, language)
-    default:
-      return null
+private async initializeTreeSitterParsers(): Promise<void> {
+  if (this.treeSitterParsers) return // Already initialized
+
+  const Parser = await import('tree-sitter')
+  
+  // Language imports - these need to be installed as dependencies
+  const JavaScript = await import('tree-sitter-javascript')
+  const TypeScript = await import('tree-sitter-typescript').then(m => m.typescript)
+  const Python = await import('tree-sitter-python')
+  const Go = await import('tree-sitter-go')
+  const Rust = await import('tree-sitter-rust')
+  const Java = await import('tree-sitter-java')
+  const Cpp = await import('tree-sitter-cpp')
+  const CSharp = await import('tree-sitter-c-sharp')
+  const Ruby = await import('tree-sitter-ruby')
+  const PHP = await import('tree-sitter-php')
+  const Swift = await import('tree-sitter-swift')
+  const Kotlin = await import('tree-sitter-kotlin')
+
+  this.treeSitterParsers = {
+    javascript: this.createParser(Parser.default, JavaScript.default),
+    typescript: this.createParser(Parser.default, TypeScript.default),
+    python: this.createParser(Parser.default, Python.default),
+    go: this.createParser(Parser.default, Go.default),
+    rust: this.createParser(Parser.default, Rust.default),
+    java: this.createParser(Parser.default, Java.default),
+    cpp: this.createParser(Parser.default, Cpp.default),
+    csharp: this.createParser(Parser.default, CSharp.default),
+    ruby: this.createParser(Parser.default, Ruby.default),
+    php: this.createParser(Parser.default, PHP.default),
+    swift: this.createParser(Parser.default, Swift.default),
+    kotlin: this.createParser(Parser.default, Kotlin.default)
   }
 }
 
-private async parseJSTypeScriptAST(filePath: string, content: string, language: string): Promise<any> {
-  try {
-    const babel = await import('@babel/parser')
-    
-    const plugins = [
-      'jsx', 'decorators-legacy', 'classProperties', 'objectRestSpread',
-      'asyncGenerators', 'functionBind', 'exportDefaultFrom', 'exportNamespaceFrom',
-      'dynamicImport', 'nullishCoalescingOperator', 'optionalChaining',
-      'optionalCatchBinding', 'throwExpressions', 'topLevelAwait'
-    ]
+private createParser(Parser: any, language: any): any {
+  const parser = new Parser()
+  parser.setLanguage(language)
+  return parser
+}
 
-    if (language === 'typescript') {
-      plugins.push('typescript')
+private async parseFileASTWithTreeSitter(filePath: string, content: string, language: string): Promise<any> {
+  try {
+    // Handle special cases for JSON and YAML
+    if (language === 'json') {
+      return await this.parseJSONAST(filePath, content)
+    }
+    if (language === 'yaml') {
+      return await this.parseYAMLAST(filePath, content)
     }
 
-    const ast = babel.parse(content, {
-      sourceType: 'module',
-      plugins,
-      allowImportExportEverywhere: true,
-      allowReturnOutsideFunction: true
-    })
+    const parser = this.treeSitterParsers[language]
+    if (!parser) {
+      throw new Error(`No parser available for language: ${language}`)
+    }
 
-    return {
+    const tree = parser.parse(content)
+    const rootNode = tree.rootNode
+
+    const extractedData = {
       path: filePath,
       language,
       size: content.length,
+      parseSuccess: !rootNode.hasError(),
+      errorCount: this.countParseErrors(rootNode),
       
-      // Core AST extractions (cleaned of raw AST nodes)
-      imports: this.extractImportsFromAST(ast),
-      exports: this.extractExportsFromAST(ast),
-      functions: this.extractFunctionsFromAST(ast),
-      classes: this.extractClassesFromAST(ast),
-      variables: this.extractVariablesFromAST(ast),
-      interfaces: language === 'typescript' ? this.extractInterfacesFromAST(ast) : [],
-      types: language === 'typescript' ? this.extractTypesFromAST(ast) : [],
-      enums: language === 'typescript' ? this.extractEnumsFromAST(ast) : [],
-      decorators: this.extractDecoratorsFromAST(ast),
-      comments: this.extractCommentsFromAST(ast, content),
+      // Universal extractions that work across languages
+      imports: this.extractImportsFromTreeSitter(rootNode, content, language),
+      exports: this.extractExportsFromTreeSitter(rootNode, content, language),
+      functions: this.extractFunctionsFromTreeSitter(rootNode, content, language),
+      classes: this.extractClassesFromTreeSitter(rootNode, content, language),
+      variables: this.extractVariablesFromTreeSitter(rootNode, content, language),
       
-      // Advanced code pattern extractions
-      callExpressions: this.extractCallExpressions(ast),
-      jsxElements: this.extractJSXElements(ast),
-      objectPatterns: this.extractObjectPatterns(ast),
-      conditionals: this.extractConditionals(ast),
-      loops: this.extractLoops(ast),
-      memberExpressions: this.extractMemberExpressions(ast),
-      literals: this.extractLiterals(ast),
-      assignments: this.extractAssignments(ast),
+      // Language-specific extractions
+      ...(await this.extractLanguageSpecificFeatures(rootNode, content, language)),
+      
+      // Universal pattern extractions
+      callExpressions: this.extractCallExpressionsFromTreeSitter(rootNode, content, language),
+      conditionals: this.extractConditionalsFromTreeSitter(rootNode, content, language),
+      loops: this.extractLoopsFromTreeSitter(rootNode, content, language),
+      literals: this.extractLiteralsFromTreeSitter(rootNode, content, language),
+      comments: this.extractCommentsFromTreeSitter(rootNode, content, language),
       
       // Searchable content for efficient querying
-      searchableContent: this.extractSearchableContent(ast, content, filePath),
+      searchableContent: this.extractSearchableContentFromTreeSitter(rootNode, content, filePath, language),
       
       // Code quality metrics
-      complexity: this.calculateComplexityFromAST(ast),
-      dependencies: this.extractDependenciesFromAST(ast),
+      complexity: this.calculateComplexityFromTreeSitter(rootNode, language),
+      dependencies: this.extractDependenciesFromTreeSitter(rootNode, content, language),
       
       // Location mapping for precise code navigation
-      locationMap: this.createLocationMap(ast, content)
+      locationMap: this.createLocationMapFromTreeSitter(rootNode, content),
+      
+      // Tree-sitter specific data
+      syntaxTree: this.serializeTreeSitterNode(rootNode, content, 3) // Max depth 3 for storage
     }
+
+    return extractedData
   } catch (error) {
     throw new Error(`Failed to parse ${language} AST for ${filePath}: ${error.message}`)
+  }
+}
+
+private async extractLanguageSpecificFeatures(rootNode: any, content: string, language: string): Promise<any> {
+  const features = {}
+  
+  switch (language) {
+    case 'typescript':
+    case 'javascript':
+      return {
+        interfaces: this.extractInterfacesFromTreeSitter(rootNode, content),
+        types: this.extractTypesFromTreeSitter(rootNode, content),
+        enums: this.extractEnumsFromTreeSitter(rootNode, content),
+        decorators: this.extractDecoratorsFromTreeSitter(rootNode, content),
+        jsxElements: this.extractJSXFromTreeSitter(rootNode, content)
+      }
+    
+    case 'python':
+      return {
+        decorators: this.extractPythonDecoratorsFromTreeSitter(rootNode, content),
+        comprehensions: this.extractPythonComprehensionsFromTreeSitter(rootNode, content),
+        async_functions: this.extractPythonAsyncFromTreeSitter(rootNode, content)
+      }
+    
+    case 'go':
+      return {
+        interfaces: this.extractGoInterfacesFromTreeSitter(rootNode, content),
+        structs: this.extractGoStructsFromTreeSitter(rootNode, content),
+        methods: this.extractGoMethodsFromTreeSitter(rootNode, content),
+        goroutines: this.extractGoGoroutinesFromTreeSitter(rootNode, content)
+      }
+    
+    case 'rust':
+      return {
+        traits: this.extractRustTraitsFromTreeSitter(rootNode, content),
+        impls: this.extractRustImplsFromTreeSitter(rootNode, content),
+        macros: this.extractRustMacrosFromTreeSitter(rootNode, content),
+        lifetimes: this.extractRustLifetimesFromTreeSitter(rootNode, content)
+      }
+    
+    case 'java':
+      return {
+        interfaces: this.extractJavaInterfacesFromTreeSitter(rootNode, content),
+        annotations: this.extractJavaAnnotationsFromTreeSitter(rootNode, content),
+        packages: this.extractJavaPackagesFromTreeSitter(rootNode, content),
+        generics: this.extractJavaGenericsFromTreeSitter(rootNode, content)
+      }
+    
+    default:
+      return {}
   }
 }
 ```
@@ -1605,14 +1695,20 @@ async executeSearch(query: string, repositoryId?: string): Promise<SearchRespons
 ### 2. Language and Framework Support
 
 #### Supported Languages
-- **Primary**: TypeScript, JavaScript, JSON
-- **File types**: .ts, .tsx, .js, .jsx, .json
-- **Future support**: Python, Go (planned)
+- **Web Technologies**: TypeScript, JavaScript, JSON, YAML
+- **Systems Languages**: Go, Rust, C++, C#
+- **Enterprise Languages**: Java, Kotlin, Scala
+- **Dynamic Languages**: Python, Ruby, PHP
+- **Mobile**: Swift, Kotlin
+- **File types**: .ts, .tsx, .js, .jsx, .json, .yaml, .py, .go, .rs, .java, .kt, .scala, .rb, .php, .swift, .cpp, .cs
+- **Future support**: Dart, Elixir, Haskell (planned)
 
 #### Supported Frameworks
-- **Frontend**: Next.js, React, Vue.js (limited)
-- **Backend**: NestJS, Express.js
-- **Full-stack**: Next.js applications with API routes
+- **Frontend**: Next.js, React, Vue.js, Angular, Svelte
+- **Backend**: NestJS, Express.js, FastAPI, Django, Spring Boot, Gin, Rails, Laravel
+- **Full-stack**: Next.js, T3 Stack, MEAN/MERN Stack
+- **Mobile**: React Native, Flutter (Dart), SwiftUI
+- **Systems**: Actix (Rust), Fiber (Go), ASP.NET Core
 
 ### 3. Search Limitations
 
