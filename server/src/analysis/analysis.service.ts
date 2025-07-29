@@ -710,57 +710,79 @@ Extract and categorize technologies in JSON format:
   }
 
   /**
-   * Initialize Tree-sitter parsers for all supported languages
+   * Initialize Web Tree-sitter parsers for all supported languages
    */
   private async initializeTreeSitterParsers(): Promise<void> {
-    if (this.treeSitterParsers) return // Already initialized
+    if (this.treeSitterParsers !== null) return // Already initialized
+
+    this.logger.log('Initializing Web Tree-sitter parsers...')
+    this.treeSitterParsers = {} // Initialize as empty object
 
     try {
-      const Parser = await import('tree-sitter')
+      const WebTreeSitter = await import('web-tree-sitter')
+      const { Parser, Language } = WebTreeSitter
       
-      // Language imports - these need to be installed as dependencies
-      const JavaScript = await import('tree-sitter-javascript')
-      const TypeScript = await import('tree-sitter-typescript')
-      const Python = await import('tree-sitter-python')
-      const Go = await import('tree-sitter-go')
-      const Rust = await import('tree-sitter-rust')
-      const Java = await import('tree-sitter-java')
-      const Cpp = await import('tree-sitter-cpp')
-      const CSharp = await import('tree-sitter-c-sharp')
-      const Ruby = await import('tree-sitter-ruby')
-      const PHP = await import('tree-sitter-php')
-      const Swift = await import('tree-sitter-swift')
-      const Kotlin = await import('tree-sitter-kotlin')
-      const JSON = await import('tree-sitter-json')
+      // Initialize the Web Tree-sitter library
+      await Parser.init({
+        locateFile(scriptName: string, scriptDirectory: string) {
+          // Return the path to the .wasm file (for Node.js, use file system path)
+          return `./public/${scriptName}`;
+        },
+      });
 
-      this.treeSitterParsers = {
-        javascript: this.createTreeSitterParser(Parser.default, JavaScript.default),
-        typescript: this.createTreeSitterParser(Parser.default, (TypeScript as any).typescript || TypeScript.default),
-        python: this.createTreeSitterParser(Parser.default, Python.default),
-        go: this.createTreeSitterParser(Parser.default, Go.default),
-        rust: this.createTreeSitterParser(Parser.default, Rust.default),
-        java: this.createTreeSitterParser(Parser.default, Java.default),
-        cpp: this.createTreeSitterParser(Parser.default, Cpp.default),
-        csharp: this.createTreeSitterParser(Parser.default, CSharp.default),
-        ruby: this.createTreeSitterParser(Parser.default, Ruby.default),
-        php: this.createTreeSitterParser(Parser.default, PHP.default),
-        swift: this.createTreeSitterParser(Parser.default, Swift.default),
-        kotlin: this.createTreeSitterParser(Parser.default, Kotlin.default),
-        json: this.createTreeSitterParser(Parser.default, JSON.default)
+      this.logger.log('Web Tree-sitter library initialized successfully')
+
+      // Language configurations with their .wasm file paths
+      const languageConfigs = [
+        { name: 'javascript', wasmPath: './public/wasm/tree-sitter-javascript.wasm' },
+        { name: 'typescript', wasmPath: './public/wasm/tree-sitter-typescript.wasm' },
+        { name: 'json', wasmPath: './public/wasm/tree-sitter-json.wasm' },
+        { name: 'python', wasmPath: './public/wasm/tree-sitter-python.wasm' },
+        { name: 'go', wasmPath: './public/wasm/tree-sitter-go.wasm' },
+      ]
+
+      // Load parsers for available languages
+      for (const config of languageConfigs) {
+        try {
+          const language = await Language.load(config.wasmPath)
+          const parser = this.createTreeSitterParser(Parser, language)
+          
+          if (parser) {
+            this.treeSitterParsers[config.name] = parser
+            this.logger.log(`Successfully initialized ${config.name} parser`)
+          }
+        } catch (error) {
+          this.logger.warn(`Failed to initialize ${config.name} parser: ${error.message}`)
+        }
       }
+
+      const initializedCount = Object.keys(this.treeSitterParsers).length
+      this.logger.log(`Initialized ${initializedCount} Web Tree-sitter parsers successfully`)
+      
     } catch (error) {
-      this.logger.error(`Failed to initialize Tree-sitter parsers: ${error.message}`)
+      this.logger.error(`Failed to initialize Web Tree-sitter parsers: ${error.message}`)
       this.treeSitterParsers = {}
     }
   }
 
   /**
-   * Create a Tree-sitter parser instance
+   * Create a Web Tree-sitter parser instance
    */
   private createTreeSitterParser(Parser: any, language: any): any {
     try {
+      if (!Parser || !language) {
+        throw new Error('Parser or language is null/undefined')
+      }
+      
       const parser = new Parser()
       parser.setLanguage(language)
+      
+      // Test the parser with a simple input to ensure it works
+      const testTree = parser.parse('test')
+      if (!testTree) {
+        throw new Error('Parser failed basic functionality test')
+      }
+      
       return parser
     } catch (error) {
       this.logger.warn(`Failed to create parser: ${error.message}`)
@@ -769,13 +791,18 @@ Extract and categorize technologies in JSON format:
   }
 
   /**
-   * Parse individual file AST using Tree-sitter
+   * Parse individual file AST using Web Tree-sitter
    */
   private async parseFileASTWithTreeSitter(filePath: string, content: string, language: string): Promise<any> {
     try {
+      // Ensure Web Tree-sitter parsers are initialized
+      if (!this.treeSitterParsers) {
+        await this.initializeTreeSitterParsers()
+      }
+
       const parser = this.treeSitterParsers[language]
       if (!parser) {
-        this.logger.warn(`No parser available for language: ${language}`)
+        this.logger.debug(`No parser available for language: ${language}, falling back to basic AST`)
         return this.createBasicASTFallback(filePath, content, language)
       }
 
@@ -786,7 +813,7 @@ Extract and categorize technologies in JSON format:
         path: filePath,
         language,
         size: content.length,
-        parseSuccess: !rootNode.hasError(),
+        parseSuccess: !rootNode.hasError,
         errorCount: this.countParseErrors(rootNode),
         
         // Universal extractions that work across languages using Tree-sitter queries
@@ -834,7 +861,7 @@ Extract and categorize technologies in JSON format:
     let errorCount = 0
     
     const traverse = (n: any) => {
-      if (n.hasError()) errorCount++
+      if (n.hasError) errorCount++
       
       for (let i = 0; i < n.childCount; i++) {
         traverse(n.child(i))

@@ -173,8 +173,14 @@ export default function RepositoryManager() {
       })
 
       eventSource.addEventListener('error', (event: MessageEvent) => {
-        const data = JSON.parse(event.data)
-        console.error('Analysis error:', data)
+        try {
+          // Try to parse JSON data if it exists
+          const data = event.data ? JSON.parse(event.data) : { message: 'Unknown error occurred' }
+          console.error('Analysis error:', data)
+        } catch (parseError) {
+          // Handle case where event.data is not valid JSON
+          console.error('Analysis error (invalid JSON):', event.data || 'No error data provided')
+        }
         
         setAnalyzingRepos(prev => {
           const newSet = new Set(prev)
@@ -192,7 +198,26 @@ export default function RepositoryManager() {
       })
 
       eventSource.onerror = (error) => {
-        console.error('SSE connection error:', error)
+        const eventSourceTarget = error.target as EventSource
+        console.error('SSE connection error:', {
+          type: error.type || 'unknown',
+          readyState: eventSourceTarget?.readyState || 'unknown',
+          message: 'EventSource connection failed'
+        })
+        
+        // Clean up state when connection fails
+        setAnalyzingRepos(prev => {
+          const newSet = new Set(prev)
+          newSet.delete(repositoryId)
+          return newSet
+        })
+        
+        setAnalysisProgress(prev => {
+          const newMap = new Map(prev)
+          newMap.delete(repositoryId)
+          return newMap
+        })
+        
         eventSource.close()
       }
     } catch (error) {
