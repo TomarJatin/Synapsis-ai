@@ -7,7 +7,10 @@ import { Input } from '@/components/ui/input'
 import { Badge } from '@/components/ui/badge'
 import { Separator } from '@/components/ui/separator'
 import { ScrollArea } from '@/components/ui/scroll-area'
-import { Loader2, Search, MessageSquare, Code2, FileText, Database, Settings, Brain, HelpCircle, Lightbulb } from 'lucide-react'
+import { Loader2, Search, MessageSquare, Code2, FileText, Database, Settings, Brain, HelpCircle, Lightbulb, ChevronDown, ChevronUp } from 'lucide-react'
+import ReactMarkdown from 'react-markdown'
+import { Prism as SyntaxHighlighter } from 'react-syntax-highlighter'
+import { oneDark } from 'react-syntax-highlighter/dist/esm/styles/prism'
 
 interface SearchMessage {
   id: string
@@ -19,6 +22,7 @@ interface SearchMessage {
   intentResult?: IntentDetectionResult
   responseType?: 'code_search' | 'casual_response' | 'help_response'
   isStreaming?: boolean
+  showAllResults?: boolean
 }
 
 interface IntentDetectionResult {
@@ -75,7 +79,8 @@ export default function CodeSearchChat() {
       id: '1',
       type: 'system',
       content: 'Welcome to the Code Search Assistant! 👋\n\nI can help you find code implementations, patterns, and snippets across your analyzed repositories. You can also just chat with me!\n\n**Try asking me:**\n• "Show me NextAuth implementation"\n• "Find authentication patterns"\n• "How does login work?"\n• Or just say "hi" to start a conversation!',
-      timestamp: new Date()
+      timestamp: new Date(),
+      showAllResults: false
     }
   ])
   const [inputValue, setInputValue] = useState('')
@@ -101,6 +106,14 @@ export default function CodeSearchChat() {
     scrollToBottom()
   }, [messages])
 
+  const toggleShowAllResults = (messageId: string) => {
+    setMessages(prev => prev.map(msg => 
+      msg.id === messageId 
+        ? { ...msg, showAllResults: !msg.showAllResults }
+        : msg
+    ))
+  }
+
   const handleSearch = async () => {
     if (!inputValue.trim() || isSearching) return
 
@@ -108,15 +121,17 @@ export default function CodeSearchChat() {
       id: Date.now().toString(),
       type: 'user',
       content: inputValue,
-      timestamp: new Date()
+      timestamp: new Date(),
+      showAllResults: false
     }
 
     const assistantMessage: SearchMessage = {
       id: (Date.now() + 1).toString(),
       type: 'assistant',
-      content: 'Analyzing your query...',
+      content: '',
       timestamp: new Date(),
-      isStreaming: true
+      isStreaming: true,
+      showAllResults: false
     }
 
     setMessages(prev => [...prev, userMessage, assistantMessage])
@@ -147,7 +162,7 @@ export default function CodeSearchChat() {
       })
       eventSourceRef.current = eventSource
 
-      let currentMessageContent = 'Analyzing your query...'
+      let currentMessageContent = ''
       let currentIntentResult: IntentDetectionResult | undefined
       let currentResponseType: 'code_search' | 'casual_response' | 'help_response' = 'code_search'
 
@@ -200,6 +215,18 @@ export default function CodeSearchChat() {
         setMessages(prev => prev.map(msg => 
           msg.id === assistantMessage.id 
             ? { ...msg, content: data.message }
+            : msg
+        ))
+      })
+
+      // Handle streaming text content (for casual/help responses)
+      eventSource.addEventListener('text_chunk', (event) => {
+        const data = JSON.parse(event.data)
+        currentMessageContent += data.chunk
+        
+        setMessages(prev => prev.map(msg => 
+          msg.id === assistantMessage.id 
+            ? { ...msg, content: currentMessageContent }
             : msg
         ))
       })
@@ -377,10 +404,10 @@ export default function CodeSearchChat() {
 
   const getIntentIcon = (intent?: string) => {
     switch (intent) {
-      case 'code_search': return <Search className="w-4 h-4" />
-      case 'casual_conversation': return <MessageSquare className="w-4 h-4" />
-      case 'help_request': return <HelpCircle className="w-4 h-4" />
-      default: return <Brain className="w-4 h-4" />
+      case 'code_search': return <Search className="w-4 h-4 text-white" />
+      case 'casual_conversation': return <MessageSquare className="w-4 h-4 text-white" />
+      case 'help_request': return <HelpCircle className="w-4 h-4 text-white" />
+      default: return <Brain className="w-4 h-4 text-white" />
     }
   }
 
@@ -391,6 +418,63 @@ export default function CodeSearchChat() {
       case 'help_response': return 'bg-purple-100 text-purple-800 dark:bg-purple-900 dark:text-purple-200'
       default: return 'bg-gray-100 text-gray-800 dark:bg-gray-900 dark:text-gray-200'
     }
+  }
+
+  const renderMessageContent = (content: string) => {
+    return (
+      <div className="prose prose-sm max-w-none dark:prose-invert prose-code:bg-gray-100 dark:prose-code:bg-gray-800 prose-code:px-1 prose-code:py-0.5 prose-code:rounded prose-code:text-sm">
+        <ReactMarkdown
+          components={{
+            code({ node, className, children, ...props }: any) {
+              const match = /language-(\w+)/.exec(className || '')
+              const isInline = !match
+              return !isInline ? (
+                <div className="relative">
+                  <div className="absolute top-2 right-2 text-xs text-gray-400 bg-gray-800 px-2 py-1 rounded z-10">
+                    {match[1]}
+                  </div>
+                  <SyntaxHighlighter
+                    style={oneDark as any}
+                    language={match[1]}
+                    PreTag="div"
+                    className="rounded-lg"
+                    showLineNumbers={true}
+                    {...props}
+                  >
+                    {String(children).replace(/\n$/, '')}
+                  </SyntaxHighlighter>
+                </div>
+              ) : (
+                <code className={className} {...props}>
+                  {children}
+                </code>
+              )
+            },
+            pre: ({ children }) => <div className="overflow-x-auto">{children}</div>,
+            p: ({ children }) => <p className="mb-2 last:mb-0">{children}</p>,
+            ul: ({ children }) => <ul className="list-disc list-inside mb-2">{children}</ul>,
+            ol: ({ children }) => <ol className="list-decimal list-inside mb-2">{children}</ol>,
+            li: ({ children }) => <li className="mb-1">{children}</li>,
+            h1: ({ children }) => <h1 className="text-lg font-bold mb-2">{children}</h1>,
+            h2: ({ children }) => <h2 className="text-base font-bold mb-2">{children}</h2>,
+            h3: ({ children }) => <h3 className="text-sm font-bold mb-2">{children}</h3>,
+            strong: ({ children }) => <strong className="font-semibold">{children}</strong>,
+            blockquote: ({ children }) => (
+              <blockquote className="border-l-4 border-gray-300 pl-4 italic my-2">
+                {children}
+              </blockquote>
+            )
+          }}
+        >
+          {content}
+        </ReactMarkdown>
+      </div>
+    )
+  }
+
+  const getResultsToShow = (message: SearchMessage) => {
+    if (!message.searchResults) return []
+    return message.showAllResults ? message.searchResults : message.searchResults.slice(0, 5)
   }
 
   return (
@@ -468,23 +552,51 @@ export default function CodeSearchChat() {
                           </div>
                         )}
                         
-                        <div className="prose prose-sm max-w-none dark:prose-invert">
-                          <div className="whitespace-pre-wrap break-words">{message.content}</div>
+                        {/* Render markdown content */}
+                        <div className="markdown-content">
+                          {message.type === 'user' ? (
+                            <div className="whitespace-pre-wrap break-words">{message.content}</div>
+                          ) : (
+                            renderMessageContent(message.content)
+                          )}
                         </div>
                         
                         {message.searchResults && message.searchResults.length > 0 && (
                           <div className="mt-6 space-y-4">
                             <Separator />
-                            <div className="flex items-center gap-2">
-                              <Code2 className="w-4 h-4" />
-                              <h4 className="font-semibold text-sm">Code Search Results</h4>
-                              <Badge variant="secondary" className="text-xs">
-                                {message.searchResults.length} found
-                              </Badge>
+                            <div className="flex items-center justify-between">
+                              <div className="flex items-center gap-2">
+                                <Code2 className="w-4 h-4" />
+                                <h4 className="font-semibold text-sm">Code Search Results</h4>
+                                <Badge variant="secondary" className="text-xs">
+                                  {message.searchResults.length} found
+                                </Badge>
+                              </div>
+                              
+                              {message.searchResults.length > 5 && (
+                                <Button
+                                  variant="outline"
+                                  size="sm"
+                                  onClick={() => toggleShowAllResults(message.id)}
+                                  className="text-xs h-7"
+                                >
+                                  {message.showAllResults ? (
+                                    <>
+                                      <ChevronUp className="w-3 h-3 mr-1" />
+                                      Show Less
+                                    </>
+                                  ) : (
+                                    <>
+                                      <ChevronDown className="w-3 h-3 mr-1" />
+                                      Show All ({message.searchResults.length})
+                                    </>
+                                  )}
+                                </Button>
+                              )}
                             </div>
                             
                             <div className="space-y-3">
-                              {message.searchResults.slice(0, 5).map((result, index) => (
+                              {getResultsToShow(message).map((result, index) => (
                                 <Card key={index} className="border border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-900">
                                   <CardContent className="p-4">
                                     <div className="flex items-start justify-between mb-3">
@@ -510,9 +622,22 @@ export default function CodeSearchChat() {
                                                 {match.type}
                                               </Badge>
                                             </div>
-                                            <p className="text-xs text-muted-foreground bg-gray-50 dark:bg-gray-900 p-2 rounded font-mono overflow-x-auto">
-                                              {match.snippet}
-                                            </p>
+                                            <div className="text-xs text-muted-foreground bg-gray-50 dark:bg-gray-900 p-2 rounded font-mono overflow-x-auto">
+                                              <SyntaxHighlighter
+                                                language={result.file.language.toLowerCase()}
+                                                style={oneDark as any}
+                                                customStyle={{
+                                                  margin: 0,
+                                                  padding: '8px',
+                                                  background: 'transparent',
+                                                  fontSize: '11px',
+                                                  lineHeight: '1.2'
+                                                } as any}
+                                                PreTag="div"
+                                              >
+                                                {match.snippet}
+                                              </SyntaxHighlighter>
+                                            </div>
                                             <p className="text-xs text-muted-foreground mt-2">{match.explanation}</p>
                                           </div>
                                         </div>
@@ -522,14 +647,6 @@ export default function CodeSearchChat() {
                                 </Card>
                               ))}
                             </div>
-                            
-                            {message.searchResults.length > 5 && (
-                              <div className="text-center">
-                                <Badge variant="secondary" className="text-xs">
-                                  And {message.searchResults.length - 5} more results...
-                                </Badge>
-                              </div>
-                            )}
                           </div>
                         )}
                         

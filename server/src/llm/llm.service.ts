@@ -465,4 +465,107 @@ Be specific and technical, but also clear and helpful.`
       }
     }
   }
+
+  /**
+   * Generate a casual conversation response with streaming
+   */
+  async generateCasualResponseStreaming(
+    query: string, 
+    context?: string,
+    onToken?: (token: string) => void
+  ): Promise<string> {
+    const contextPrompt = context ? `\n\nContext: ${context}` : ''
+    
+    try {
+      const model = this.getModel({
+        model: 'anthropic',
+        name: 'claude-3-haiku-20240307',
+        temperature: 0.7,
+        maxTokens: 200
+      })
+      
+      const result = await streamText({
+        model,
+        messages: [
+          {
+            role: 'system',
+            content: `You are a friendly code search assistant. Respond warmly and briefly to casual conversation.
+Keep responses short (1-2 sentences) and always mention that you're here to help with code search if they need it.
+Be professional but friendly.${contextPrompt}`
+          },
+          {
+            role: 'user',
+            content: query
+          }
+        ],
+        temperature: 0.7,
+        maxTokens: 200,
+      })
+
+      let fullText = ''
+      
+      for await (const textPart of result.textStream) {
+        fullText += textPart
+        if (onToken) {
+          onToken(textPart)
+        }
+      }
+      
+      return fullText
+    } catch (error) {
+      this.logger.error(`Casual response streaming failed: ${error.message}`)
+      // Fallback to non-streaming
+      return await this.generateCasualResponse(query, context)
+    }
+  }
+
+  /**
+   * Generate a help response with streaming
+   */
+  async generateHelpResponseStreaming(
+    query: string,
+    onToken?: (token: string) => void
+  ): Promise<string> {
+    try {
+      const model = this.getModel({
+        model: 'anthropic',
+        name: 'claude-3-haiku-20240307',
+        temperature: 0.7,
+        maxTokens: 400
+      })
+      
+      const result = await streamText({
+        model,
+        messages: [
+          {
+            role: 'system',
+            content: `You are a helpful code search assistant. Explain what you can do and how to use the system.
+Be concise but informative. Mention that you can search through analyzed repositories for code patterns, implementations, and more.
+Give 2-3 example queries they could try.`
+          },
+          {
+            role: 'user',
+            content: query
+          }
+        ],
+        temperature: 0.7,
+        maxTokens: 400,
+      })
+
+      let fullText = ''
+      
+      for await (const textPart of result.textStream) {
+        fullText += textPart
+        if (onToken) {
+          onToken(textPart)
+        }
+      }
+      
+      return fullText
+    } catch (error) {
+      this.logger.error(`Help response streaming failed: ${error.message}`)
+      // Fallback to non-streaming
+      return await this.generateHelpResponse(query)
+    }
+  }
 }

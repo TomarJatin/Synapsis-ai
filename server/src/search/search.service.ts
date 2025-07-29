@@ -94,8 +94,20 @@ export class SearchService {
         totalSteps: 2
       })
 
-      const casualResponse = intentResult.suggestedResponse || 
-        await this.llmService.generateCasualResponse(query)
+      let casualResponse = ''
+
+      if (intentResult.suggestedResponse) {
+        casualResponse = intentResult.suggestedResponse
+      } else {
+        // Stream the casual response
+        casualResponse = await this.llmService.generateCasualResponseStreaming(
+          query,
+          undefined,
+          (token: string) => {
+            onProgress('text_chunk', { chunk: token })
+          }
+        )
+      }
 
       return {
         query,
@@ -114,7 +126,13 @@ export class SearchService {
         totalSteps: 2
       })
 
-      const helpResponse = await this.llmService.generateHelpResponse(query)
+      // Stream the help response
+      const helpResponse = await this.llmService.generateHelpResponseStreaming(
+        query,
+        (token: string) => {
+          onProgress('text_chunk', { chunk: token })
+        }
+      )
 
       return {
         query,
